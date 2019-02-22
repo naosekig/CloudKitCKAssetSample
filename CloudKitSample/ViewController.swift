@@ -9,7 +9,7 @@
 import UIKit
 import CloudKit
 
-class ViewController: UIViewController,UITableViewDelegate,UITableViewDataSource,UITextViewDelegate {
+class ViewController: UIViewController,UITableViewDelegate,UITableViewDataSource,UITextViewDelegate,UIImagePickerControllerDelegate,UINavigationControllerDelegate {
     private let labelSearch:UILabel = UILabel()
     private let labelMinSalesPrice:UILabel = UILabel()
     private let textMinSalesPrice:UITextView = UITextView()
@@ -24,17 +24,21 @@ class ViewController: UIViewController,UITableViewDelegate,UITableViewDataSource
     private let textCostRate:UITextView = UITextView()
     private let labelSalesPrice:UILabel = UILabel()
     private let textSalesPrice:UITextView = UITextView()
+    private let labelImage:UILabel = UILabel()
+    private let imageView:UIImageView = UIImageView()
+    private let buttonImage:UIButton = UIButton()
     private let buttonInsert:UIButton = UIButton()
     private let buttonUpdate:UIButton = UIButton()
     private let buttonDelete:UIButton = UIButton()
     private let tableView:UITableView = UITableView()
     private var goodsMasters:[GoodsMaster] = [GoodsMaster]()
 
-    struct GoodsMaster: Codable {
+    struct GoodsMaster {
         var code:String
         var name:String
         var costPrice:Double
         var salesPrice:Int
+        var image:UIImage!
     }
     
     override func viewDidLoad() {
@@ -74,6 +78,15 @@ class ViewController: UIViewController,UITableViewDelegate,UITableViewDataSource
         self.view.addSubview(labelSalesPrice)
         designTextView(textView: textSalesPrice,keyboardType: .numberPad)
         self.view.addSubview(textSalesPrice)
+        
+        labelImage.text = "Image(画像)"
+        self.view.addSubview(labelImage)
+        imageView.contentMode = .scaleAspectFit
+        self.view.addSubview(imageView)
+        buttonImage.setTitle("Pictureから取得", for: .normal)
+        buttonImage.addTarget(self, action: #selector(self.touchUpButtonPicture), for: .touchUpInside)
+        designButton(button: buttonImage)
+        self.view.addSubview(buttonImage)
         
         buttonInsert.setTitle("INSERT", for: .normal)
         buttonInsert.addTarget(self, action: #selector(self.touchUpButtonInsert), for: .touchUpInside)
@@ -145,19 +158,22 @@ class ViewController: UIViewController,UITableViewDelegate,UITableViewDataSource
         textCostRate.frame = CGRect(x: 160, y: 240, width: widthValue-165, height: 40)
         labelSalesPrice.frame = CGRect(x: 5, y: 285, width: 150, height: 40)
         textSalesPrice.frame = CGRect(x: 160, y: 285, width: widthValue-165, height: 40)
+        labelImage.frame = CGRect(x: 5, y: 330, width: 150, height: 80)
+        imageView.frame = CGRect(x: 160, y: 330, width: widthValue-320, height: 80)
+        buttonImage.frame = CGRect(x: widthValue-155, y: 330, width: 150, height: 80)
         
-        buttonInsert.frame = CGRect(x: 5, y: 330, width: widthValue/3-10, height: 40)
-        buttonUpdate.frame = CGRect(x: widthValue/3+5, y: 330, width: widthValue/3-10, height: 40)
-        buttonDelete.frame = CGRect(x: widthValue/3*2+5, y: 330, width: widthValue/3-10, height: 40)
+        buttonInsert.frame = CGRect(x: 5, y: 415, width: widthValue/3-10, height: 40)
+        buttonUpdate.frame = CGRect(x: widthValue/3+5, y: 415, width: widthValue/3-10, height: 40)
+        buttonDelete.frame = CGRect(x: widthValue/3*2+5, y: 415, width: widthValue/3-10, height: 40)
         
-        tableView.frame = CGRect(x: 5, y: 375, width: widthValue-10, height: heightValue-380)
+        tableView.frame = CGRect(x: 5, y: 455, width: widthValue-10, height: heightValue-455)
     }
     
     /**
      Cloud KitにデータをINSERTする
-     @param INSERTするデータ code:コード name:名称 costRate:原価率 salesPrice:売単価
+     @param INSERTするデータ code:コード name:名称 costRate:原価率 salesPrice:売単価 image:画像
      */
-    private func insertData(code:String,name:String,costRate:Double,salesPrice:Int){
+    private func insertData(code:String,name:String,costRate:Double,salesPrice:Int,image:UIImage!){
         let ckDatabase = CKContainer.default().privateCloudDatabase
         
         //INSERTするデータを設定
@@ -166,6 +182,22 @@ class ViewController: UIViewController,UITableViewDelegate,UITableViewDataSource
         ckRecord["name"] = name
         ckRecord["costRate"] = costRate
         ckRecord["salesPrice"] = salesPrice
+        
+        if (image != nil){
+            //UIImageをNSDataに変換
+            let imageData = image.jpegData(compressionQuality: 1.0)
+        
+            //UIImageの方向を確認
+            var imageOrientation:Int = 0
+            if (image.imageOrientation == UIImage.Orientation.down){
+                imageOrientation = 2
+            }else{
+                imageOrientation = 1
+            }
+            
+            ckRecord["image"] = imageData
+            ckRecord["imageOrientation"] = imageOrientation
+        }
         
         //データのINSERTを実行
         ckDatabase.save(ckRecord, completionHandler: { (ckRecords, error) in
@@ -197,7 +229,16 @@ class ViewController: UIViewController,UITableViewDelegate,UITableViewDataSource
                 //検索成功
                 self.goodsMasters.removeAll()
                 for ckRecord in ckRecords!{
-                    let goodsMaster = GoodsMaster(code: ckRecord["code"]!, name: ckRecord["name"]!, costPrice: ckRecord["costRate"]!, salesPrice: ckRecord["salesPrice"]!)
+                    var image:UIImage! = nil
+                    let imageData = ckRecord["image"]
+                    if (imageData != nil){
+                        image = UIImage(data: ckRecord["image"]!)
+                        let imageOrientation:Int = ckRecord["imageOrientation"]!
+                        if (imageOrientation == 2) {
+                            image = UIImage(cgImage: image!.cgImage!, scale: image!.scale, orientation: UIImage.Orientation.down)
+                        }
+                    }
+                    let goodsMaster = GoodsMaster(code: ckRecord["code"]!, name: ckRecord["name"]!, costPrice: ckRecord["costRate"]!, salesPrice: ckRecord["salesPrice"]!,image:image)
                     self.goodsMasters.append(goodsMaster)
                 }
                 DispatchQueue.main.async {
@@ -209,9 +250,9 @@ class ViewController: UIViewController,UITableViewDelegate,UITableViewDataSource
     
     /**
      指定した条件でCloud KitのデータをUPDATEする
-     @param whereCode:更新対象のコード updateName:名称の更新値 updateCostRate:原価率の更新値 updateSalesPrice:売単価の更新値
+     @param whereCode:更新対象のコード updateName:名称の更新値 updateCostRate:原価率の更新値 updateSalesPrice:売単価の更新値 updateImage:画像の更新値
      */
-    private func updateData(whereCode:String,updateName:String,updateCostRate:Double,updateSalesPrice:Int){
+    private func updateData(whereCode:String,updateName:String,updateCostRate:Double,updateSalesPrice:Int,updateImage:UIImage!){
         let ckDatabase = CKContainer.default().privateCloudDatabase
         
         //1.更新対象のレコードを検索する
@@ -225,6 +266,22 @@ class ViewController: UIViewController,UITableViewDelegate,UITableViewDataSource
                     ckRecord["name"] = updateName
                     ckRecord["costRate"] = updateCostRate
                     ckRecord["salesPrice"] = updateSalesPrice
+                    if (updateImage != nil){
+                        //UIImageをNSDataに変換
+                        let imageData = updateImage.jpegData(compressionQuality: 1.0)
+                        
+                        //UIImageの方向を確認
+                        var imageOrientation:Int = 0
+                        if (updateImage.imageOrientation == UIImage.Orientation.down){
+                            imageOrientation = 2
+                        }else{
+                            imageOrientation = 1
+                        }
+                        
+                        ckRecord["image"] = imageData
+                        ckRecord["imageOrientation"] = imageOrientation
+                    }
+                    
                     ckDatabase.save(ckRecord, completionHandler: { (ckRecord, error) in
                         if error != nil {
                             print("\(String(describing: error?.localizedDescription))")
@@ -280,13 +337,20 @@ class ViewController: UIViewController,UITableViewDelegate,UITableViewDataSource
         textName.text = goodsMasters[index].name
         textCostRate.text = goodsMasters[index].costPrice.description
         textSalesPrice.text = goodsMasters[index].salesPrice.description
+        imageView.image = goodsMasters[index].image
     }
     
     @objc func touchUpButtonSearch(){
         self.view.endEditing(true)
         
-        let minSalesPriceString = textMinSalesPrice.text!
-        let maxSalesPriceString = textMaxSalesPrice.text!
+        var minSalesPriceString = textMinSalesPrice.text!
+        if (minSalesPriceString.count == 0){
+            minSalesPriceString = "0"
+        }
+        var maxSalesPriceString = textMaxSalesPrice.text!
+        if (maxSalesPriceString.count == 0){
+            maxSalesPriceString = "999999999999"
+        }
         
         searchData(minSalesPrice: Int(minSalesPriceString)!, maxSalesPrice: Int(maxSalesPriceString)!)
     }
@@ -299,7 +363,7 @@ class ViewController: UIViewController,UITableViewDelegate,UITableViewDataSource
         let costRateString = textCostRate.text!
         let salesPriceString = textSalesPrice.text!
         
-        insertData(code: codeString, name: nameString, costRate: Double(costRateString)!, salesPrice: Int(salesPriceString)!)
+        insertData(code: codeString, name: nameString, costRate: Double(costRateString)!, salesPrice: Int(salesPriceString)!,image:imageView.image)
     }
     
     @objc func touchUpButtonUpdate(){
@@ -310,7 +374,7 @@ class ViewController: UIViewController,UITableViewDelegate,UITableViewDataSource
         let costRateString = textCostRate.text!
         let salesPriceString = textSalesPrice.text!
         
-        updateData(whereCode: codeString, updateName: nameString, updateCostRate: Double(costRateString)!, updateSalesPrice: Int(salesPriceString)!)
+        updateData(whereCode: codeString, updateName: nameString, updateCostRate: Double(costRateString)!, updateSalesPrice: Int(salesPriceString)!,updateImage: imageView.image)
     }
     
     @objc func touchUpButtonDelete(){
@@ -327,6 +391,41 @@ class ViewController: UIViewController,UITableViewDelegate,UITableViewDataSource
             return false
         }
         return true
+    }
+    
+    @objc func touchUpButtonPicture(){
+        openPicker()
+    }
+    
+    @objc func openPicker(){
+        if !UIImagePickerController.isSourceTypeAvailable(UIImagePickerController.SourceType.photoLibrary){
+            return
+        }
+        
+        let picker = UIImagePickerController()
+        picker.sourceType = UIImagePickerController.SourceType.photoLibrary
+        picker.delegate = self
+        
+        self.present(picker,animated:false,completion:nil)
+    }
+    
+    func imagePickerController(_ picker:UIImagePickerController,didFinishPickingMediaWithInfo info:[UIImagePickerController.InfoKey:Any]){
+        
+        picker.presentingViewController?.dismiss(animated: false, completion: nil)
+        
+        let image = info[UIImagePickerController.InfoKey.originalImage] as? UIImage
+        
+        let widthValue:CGFloat = image!.size.width
+        let heightValue:CGFloat = image!.size.height
+        let scaleValue:CGFloat = 860/widthValue
+        
+        let size = CGSize(width: widthValue*scaleValue, height: heightValue*scaleValue)
+        UIGraphicsBeginImageContext(size)
+        image!.draw(in: CGRect(x: 0, y: 0, width: size.width, height: size.height))
+        let resizeImage:UIImage! = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        
+        imageView.image = resizeImage
     }
 }
 
