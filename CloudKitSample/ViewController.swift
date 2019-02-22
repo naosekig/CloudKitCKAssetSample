@@ -230,8 +230,7 @@ class ViewController: UIViewController,UITableViewDelegate,UITableViewDataSource
                 self.goodsMasters.removeAll()
                 for ckRecord in ckRecords!{
                     var image:UIImage! = nil
-                    let imageData = ckRecord["image"]
-                    if (imageData != nil){
+                    if (ckRecord["image"] != nil){
                         image = UIImage(data: ckRecord["image"]!)
                         let imageOrientation:Int = ckRecord["imageOrientation"]!
                         if (imageOrientation == 2) {
