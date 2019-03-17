@@ -177,26 +177,19 @@ class ViewController: UIViewController,UITableViewDelegate,UITableViewDataSource
         let ckDatabase = CKContainer.default().privateCloudDatabase
         
         //INSERTするデータを設定
-        let ckRecord = CKRecord(recordType: "GoodsMaster")
+        let ckRecord = CKRecord(recordType: "GoodsMaster2")
         ckRecord["code"] = code
         ckRecord["name"] = name
         ckRecord["costRate"] = costRate
         ckRecord["salesPrice"] = salesPrice
         
-        if (image != nil){
-            //UIImageをNSDataに変換
-            let imageData = image.jpegData(compressionQuality: 1.0)
-        
-            //UIImageの方向を確認
-            var imageOrientation:Int = 0
-            if (image.imageOrientation == UIImage.Orientation.down){
-                imageOrientation = 2
-            }else{
-                imageOrientation = 1
+        if image != nil {
+            let url = saveImageFile(fileName: code + ".png", image: image)
+            if url == nil {
+                return
             }
-            
-            ckRecord["image"] = imageData
-            ckRecord["imageOrientation"] = imageOrientation
+            let ckAsset = CKAsset(fileURL: url!)
+            ckRecord["image"] = ckAsset
         }
         
         //データのINSERTを実行
@@ -215,7 +208,7 @@ class ViewController: UIViewController,UITableViewDelegate,UITableViewDataSource
     private func searchData(minSalesPrice:Int,maxSalesPrice:Int){
         let ckDatabase = CKContainer.default().privateCloudDatabase
         //検索条件指定
-        let ckQuery = CKQuery(recordType: "GoodsMaster", predicate: NSPredicate(format: "salesPrice >= %d and salesPrice <= %d", argumentArray: [minSalesPrice,maxSalesPrice]))
+        let ckQuery = CKQuery(recordType: "GoodsMaster2", predicate: NSPredicate(format: "salesPrice >= %d and salesPrice <= %d", argumentArray: [minSalesPrice,maxSalesPrice]))
         
         //ソート条件指定
         ckQuery.sortDescriptors = [NSSortDescriptor(key: "salesPrice", ascending: false),NSSortDescriptor(key: "costRate", ascending: true)]
@@ -230,13 +223,17 @@ class ViewController: UIViewController,UITableViewDelegate,UITableViewDataSource
                 self.goodsMasters.removeAll()
                 for ckRecord in ckRecords!{
                     var image:UIImage! = nil
+                    
                     if (ckRecord["image"] != nil){
-                        image = UIImage(data: ckRecord["image"]!)
-                        let imageOrientation:Int = ckRecord["imageOrientation"]!
-                        if (imageOrientation == 2) {
-                            image = UIImage(cgImage: image!.cgImage!, scale: image!.scale, orientation: UIImage.Orientation.down)
+                        guard let ckAsset = ckRecord["image"] as? CKAsset else{
+                            return
                         }
+                        guard let imageData = NSData(contentsOf: ckAsset.fileURL) else {
+                            return
+                        }
+                        image = UIImage(data: imageData as Data)
                     }
+                    
                     let goodsMaster = GoodsMaster(code: ckRecord["code"]!, name: ckRecord["name"]!, costPrice: ckRecord["costRate"]!, salesPrice: ckRecord["salesPrice"]!,image:image)
                     self.goodsMasters.append(goodsMaster)
                 }
@@ -255,7 +252,7 @@ class ViewController: UIViewController,UITableViewDelegate,UITableViewDataSource
         let ckDatabase = CKContainer.default().privateCloudDatabase
         
         //1.更新対象のレコードを検索する
-        let ckQuery = CKQuery(recordType: "GoodsMaster", predicate: NSPredicate(format: "code == %@", argumentArray: [whereCode]))
+        let ckQuery = CKQuery(recordType: "GoodsMaster2", predicate: NSPredicate(format: "code == %@", argumentArray: [whereCode]))
         ckDatabase.perform(ckQuery, inZoneWith: nil, completionHandler: { (ckRecords, error) in
             if error != nil {
                 print("\(String(describing: error?.localizedDescription))")
@@ -266,19 +263,12 @@ class ViewController: UIViewController,UITableViewDelegate,UITableViewDataSource
                     ckRecord["costRate"] = updateCostRate
                     ckRecord["salesPrice"] = updateSalesPrice
                     if (updateImage != nil){
-                        //UIImageをNSDataに変換
-                        let imageData = updateImage.jpegData(compressionQuality: 1.0)
-                        
-                        //UIImageの方向を確認
-                        var imageOrientation:Int = 0
-                        if (updateImage.imageOrientation == UIImage.Orientation.down){
-                            imageOrientation = 2
-                        }else{
-                            imageOrientation = 1
+                        let url = self.saveImageFile(fileName: ckRecord["code"]! + ".png", image: updateImage)
+                        if url == nil {
+                            return
                         }
-                        
-                        ckRecord["image"] = imageData
-                        ckRecord["imageOrientation"] = imageOrientation
+                        let ckAsset = CKAsset(fileURL: url!)
+                        ckRecord["image"] = ckAsset
                     }
                     
                     ckDatabase.save(ckRecord, completionHandler: { (ckRecord, error) in
@@ -299,7 +289,7 @@ class ViewController: UIViewController,UITableViewDelegate,UITableViewDataSource
         let ckDatabase = CKContainer.default().privateCloudDatabase
         
         //1.削除対象のレコードを検索する
-        let ckQuery = CKQuery(recordType: "GoodsMaster", predicate: NSPredicate(format: "code == %@", argumentArray: [whereCode]))
+        let ckQuery = CKQuery(recordType: "GoodsMaster2", predicate: NSPredicate(format: "code == %@", argumentArray: [whereCode]))
         ckDatabase.perform(ckQuery, inZoneWith: nil, completionHandler: { (ckRecords, error) in
             if error != nil {
                 print("\(String(describing: error?.localizedDescription))")
@@ -314,6 +304,32 @@ class ViewController: UIViewController,UITableViewDelegate,UITableViewDataSource
                 }
             }
         })
+    }
+    
+    /**
+     UIImageをファイルとして保存しURLを返す
+     @param image:保存するUIImage fileName:ファイル名
+     @return 保存したファイルのURL(保存に失敗した場合はnil)
+     */
+    private func saveImageFile(fileName:String,image:UIImage) -> URL!{
+        let directoryName:String = NSHomeDirectory() + "/Library"
+        let documentsURL = URL(fileURLWithPath: directoryName)
+        let fileURL = documentsURL.appendingPathComponent(fileName)
+        let pngImageData = image.pngData()
+        let fileManager = FileManager.default
+        
+        do {
+            if (!fileManager.fileExists(atPath: directoryName)){
+                try fileManager.createDirectory(atPath: directoryName, withIntermediateDirectories: true, attributes: nil)
+            }
+            
+            try pngImageData!.write(to: fileURL)
+            
+            return fileURL
+        } catch let error{
+            print("\(String(describing: error.localizedDescription))")
+            return nil
+        }
     }
     
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
